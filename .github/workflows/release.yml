@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      SLUG: mode-user-security-validation
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify tag matches plugin version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION="$(grep -m1 -E '^\s*\*\s*Version:' "${SLUG}.php" | awk '{print $NF}' | tr -d '\r')"
+          if [ "${TAG}" != "${VERSION}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match plugin Version ${VERSION}"
+            exit 1
+          fi
+
+      - name: Build zip
+        run: |
+          mkdir -p "build/${SLUG}"
+          cp -r "${SLUG}.php" readme.txt LICENSE includes views assets "build/${SLUG}/"
+          (cd "build/${SLUG}" && find . -type f \( -name '*.php' -o -name '*.js' -o -name '*.css' \) | sed 's#^\./##' | sort | xargs sha256sum > checksums.sha256)
+          cd build && zip -r "../${SLUG}.zip" "${SLUG}"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" "${SLUG}.zip" --title "${GITHUB_REF_NAME}" --generate-notes
